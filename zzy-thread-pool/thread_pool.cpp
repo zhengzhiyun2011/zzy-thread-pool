@@ -1,6 +1,5 @@
 #include "thread_pool.h"
 
-#include <iostream>
 namespace ztools {
 	void ThreadPool::executor_func(ThreadPool& pool) noexcept
     {

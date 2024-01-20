@@ -1,41 +1,23 @@
 #include <iostream>
+#include <vector>
 #include "thread_pool.h"
-using namespace std;
+using std::cout;
+using std::launch;
+using std::vector;
+using std::async;
 
 ztools::ThreadPool pool;
 
 int main()
 {
-	auto res1 = async(
-		launch::async, [] {
-			pool.add_task(
-				1,
-				[] {
-					cout << "This is thread 1.\n";
-				}
-			);
+	vector<int> arr(100);
+	pool.add_loop(arr.begin(), arr.end(), [](int& e) { ++e; });
+	pool.add_loop_n(arr.size(), arr.begin(), [](int& e) { ++e; });
+	pool.wait_all();
 
-			pool.add_task(
-				2,
-				[] {
-					cout << "This is thread 2.\n";
-				}
-			);
-		}
-	);
-
-	auto res2 = async(
-		launch::async, [] {
-			pool.add_task(
-				[] {
-					cout << "This is thread 3.\n";
-				}
-			);
-		}
-	);
-
-	res1.get();
-	res2.get();
+	for (auto& e : arr) {
+		cout << e << ' ';
+	}
 
 	return 0;
 }

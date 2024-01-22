@@ -12,7 +12,7 @@ int main()
 {
 	vector<int> arr(100);
 	pool.add_loop(arr.begin(), arr.end(), [](int& e) { ++e; });
-	pool.add_loop_n(arr.size(), arr.begin(), [](int& e) { ++e; });
+	pool.add_loop_n(arr.begin(), arr.size(), [](int& e) { ++e; });
 	pool.wait_all();
 
 	for (auto& e : arr) {

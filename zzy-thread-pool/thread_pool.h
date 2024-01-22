@@ -1,12 +1,15 @@
 #pragma once
 #ifndef ZTOOLS_THREAD_POOL_H_
 #define ZTOOLS_THREAD_POOL_H_
+#include <cassert>
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <functional>
 #include <future>
+#include <iterator>
 #include <memory>
 #include <mutex>
 #include <queue>
@@ -15,20 +18,85 @@
 #include <utility>
 #include <vector>
 namespace ztools {
-    struct Task {
+    struct Task
+    {
         std::function<void()> func;
         unsigned priority;
     };
 
-    struct TaskPriorityLess {
+    struct TaskPriorityLess
+    {
         bool operator()(const Task& left, const Task& right) const noexcept
         {
             return left.priority < right.priority;
         }
     };
 
+    class LoopWaiter
+    {
+    private:
+        struct Wrapper {
+            Wrapper() = default;
+            Wrapper(std::size_t tasks_count)
+                : count(tasks_count) {}
+
+            ~Wrapper() = default;
+
+            std::atomic_size_t count;
+            std::mutex mutex;
+            std::condition_variable waiter;
+        };
+    public:
+        LoopWaiter() noexcept
+            : m_status(nullptr) {}
+
+        LoopWaiter(const LoopWaiter&) noexcept = default;
+        LoopWaiter(size_t tasks_number)
+            : m_status(std::make_shared<Wrapper>(tasks_number)) {}
+
+        ~LoopWaiter() = default;
+
+        LoopWaiter& operator=(const LoopWaiter&) noexcept = default;
+    private:
+        void count_down()
+        {
+            using std::memory_order_relaxed;
+            assert(m_status != nullptr);
+            m_status->count.fetch_sub(1, memory_order_relaxed);
+
+            if (m_status->count.load(memory_order_relaxed) == 0) {
+                m_status->waiter.notify_one();
+            }
+        }
+    public:
+        void wait()
+        {
+            using std::memory_order_relaxed;
+            using std::unique_lock;
+            using std::mutex;
+
+            assert(m_status != nullptr);
+            if (m_status->count.load(memory_order_relaxed) > 0) {
+                unique_lock<mutex> lock(m_status->mutex);
+                m_status->waiter.wait(
+                    lock,
+                    [this]() {
+                        return this->m_status->count.load(memory_order_relaxed) == 0;
+                    }
+                );
+            }
+        }
+    private:
+        std::shared_ptr<Wrapper> m_status;
+
+        friend class ThreadPool;
+    };
+
     class ThreadPool {
     public:
+        static constexpr unsigned default_task_priority = 5;
+        static constexpr unsigned default_looped_times_in_one_task = 15;
+
         std::pair<unsigned, unsigned> get_threads_number_limit() const noexcept
         {
             return {
@@ -103,6 +171,16 @@ namespace ztools {
             }
         }
 
+        void wait_all()
+        {
+            using std::memory_order_relaxed;
+            namespace this_thread = std::this_thread;
+            while (!(m_tasks.empty() && m_threads_number ==
+                m_free_threads_number.load(memory_order_relaxed))) {
+                this_thread::yield();
+            }
+        }
+
         template <typename Func, typename... Args>
         auto add_task(unsigned priority, Func&& func, Args&&... args)
             -> std::future<decltype(std::forward<Func>(func)(std::forward<Args>(args)...))>
@@ -149,7 +227,179 @@ namespace ztools {
             -> std::future<decltype(std::forward<Func>(func)(std::forward<Args>(args)...))>
         {
             using std::forward;
-            return add_task(5, forward<Func>(func), forward<Args>(args)...);
+            return add_task(default_task_priority, forward<Func>(func), forward<Args>(args)...);
+        }
+
+        template <typename Iter, typename Func, typename std::enable_if<std::is_base_of<
+            std::forward_iterator_tag, typename Iter::iterator_category>::value, int>::type = 0>
+        LoopWaiter add_loop_n(
+            unsigned priority,
+            std::size_t one_task_processing_number,
+            Iter begin,
+            std::size_t n,
+            Func&& func
+        )
+        {
+            using std::size_t;
+            using std::forward;
+            using std::make_shared;
+            using function_type = typename std::decay<Func>::type;
+
+            size_t tasks_number = n / one_task_processing_number;
+            size_t remaining_number = n % one_task_processing_number;
+            LoopWaiter waiter(tasks_number);
+            auto packaged_func = make_shared<function_type>(forward<Func>(func));
+
+            if (n < one_task_processing_number) {
+                add_task(
+                    priority,
+                    [packaged_func, waiter](Iter begin, Iter end) mutable noexcept {
+                        for (; begin != end; ++begin) {
+                            (*packaged_func)(*begin);
+                        }
+
+                        waiter.count_down();
+                    },
+                    begin, begin + n
+                );
+            } else {
+                // Create tasks_number - 1 tasks
+                while (--tasks_number) {
+                    add_task(
+                        priority,
+                        [packaged_func, waiter](Iter begin, Iter end) mutable noexcept {
+                            for (; begin != end; ++begin) {
+                                (*packaged_func)(*begin);
+                            }
+
+                            waiter.count_down();
+                        },
+                        begin, begin + one_task_processing_number
+                    );
+
+                    begin += one_task_processing_number;
+                }
+
+                // Create the last task
+                add_task(
+                    priority,
+                    [packaged_func, waiter](Iter begin, Iter end) mutable noexcept {
+                        for (; begin != end; ++begin) {
+                            (*packaged_func)(*begin);
+                        }
+
+                        waiter.count_down();
+                    },
+                    begin, begin + one_task_processing_number + remaining_number
+                );
+            }
+
+            return waiter;
+        }
+
+        template <typename Iter, typename Func, typename std::enable_if<std::is_base_of<
+            std::forward_iterator_tag, typename Iter::iterator_category>::value, int>::type = 0>
+        LoopWaiter add_loop_n(
+            std::size_t one_task_processing_number,
+            Iter begin,
+            std::size_t n,
+            Func&& func
+        )
+        {
+            using std::forward;
+            using std::move;
+
+            return add_loop_n(
+                default_task_priority,
+                one_task_processing_number,
+                move(begin),
+                n,
+                forward<Func>(func)
+            );
+        }
+
+        template <typename Iter, typename Func, typename std::enable_if<std::is_base_of<
+            std::forward_iterator_tag, typename Iter::iterator_category>::value, int>::type = 0>
+        LoopWaiter add_loop_n(
+            Iter begin,
+            std::size_t n,
+            Func&& func
+        )
+        {
+            using std::forward;
+            using std::move;
+
+            return add_loop_n(
+                default_looped_times_in_one_task,
+                move(begin),
+                n,
+                forward<Func>(func)
+            );
+        }
+
+        template <typename Iter, typename Func, typename std::enable_if<std::is_base_of<
+            std::random_access_iterator_tag, typename Iter::iterator_category>::value, int>::type =
+            0>
+        LoopWaiter add_loop(
+            unsigned priority,
+            std::size_t one_task_processing_number,
+            Iter begin,
+            Iter end,
+            Func&& func
+        )
+        {
+            using std::forward;
+            using std::move;
+
+            return add_loop_n(
+                priority,
+                one_task_processing_number,
+                move(begin),
+                end - begin,
+                forward<Func>(func)
+            );
+        }
+
+        template <typename Iter, typename Func, typename std::enable_if<std::is_base_of<
+            std::random_access_iterator_tag, typename Iter::iterator_category>::value, int>::type =
+            0>
+        LoopWaiter add_loop(
+            std::size_t one_task_processing_number,
+            Iter begin,
+            Iter end,
+            Func&& func
+        )
+        {
+            using std::forward;
+            using std::move;
+
+            return add_loop(
+                default_task_priority,
+                one_task_processing_number,
+                move(begin),
+                move(end),
+                forward<Func>(func)
+            );
+        }
+
+        template <typename Iter, typename Func, typename std::enable_if<std::is_base_of<
+            std::random_access_iterator_tag, typename Iter::iterator_category>::value, int>::type =
+            0>
+        LoopWaiter add_loop(
+            Iter begin,
+            Iter end,
+            Func&& func
+        )
+        {
+            using std::forward;
+            using std::move;
+
+            return add_loop(
+                default_looped_times_in_one_task,
+                move(begin),
+                move(end),
+                forward<Func>(func)
+            );
         }
     private:
         std::mutex m_mutex;

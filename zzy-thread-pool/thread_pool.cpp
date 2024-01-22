@@ -1,20 +1,20 @@
 #include "thread_pool.h"
-
-namespace ztools {
-	void ThreadPool::executor_func(ThreadPool& pool) noexcept
-    {
-        using std::memory_order_relaxed;
-        using std::memory_order_release;
-        using std::cv_status;
-        using std::function;
-        using std::mutex;
-        using std::unique_lock;
+using std::memory_order_relaxed;
+using std::memory_order_release;
+using std::cv_status;
+using std::function;
+using std::mutex;
+using std::unique_lock;
 #ifdef _MSC_VER
 #pragma warning(disable : 4455)
-        using std::operator""s;
+using std::operator""s;
 #pragma warning(default : 4455)
 #endif
-        std::this_thread::sleep_for(std::chrono::seconds(0));
+namespace this_thread = std::this_thread;
+
+namespace ztools {
+    void ThreadPool::executor_func(ThreadPool& pool) noexcept
+    {
         for (;;) {
             function<void()> task;
 

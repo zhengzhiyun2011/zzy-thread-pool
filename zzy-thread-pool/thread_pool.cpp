@@ -13,10 +13,8 @@ using std::operator""s;
 namespace this_thread = std::this_thread;
 
 namespace ztools {
-	void ThreadPool::executor_func(ThreadPool& pool) noexcept
+    void ThreadPool::executor_func(ThreadPool& pool) noexcept
     {
-        
-        this_thread::sleep_for(std::chrono::seconds(0));
         for (;;) {
             function<void()> task;
 

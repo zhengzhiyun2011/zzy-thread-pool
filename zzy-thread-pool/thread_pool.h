@@ -2,7 +2,6 @@
 #ifndef ZTOOLS_THREAD_POOL_H_
 #define ZTOOLS_THREAD_POOL_H_
 #include <cassert>
-#include <cmath>
 
 #include <algorithm>
 #include <atomic>
@@ -242,7 +241,6 @@ namespace ztools {
         )
         {
             using std::size_t;
-            using std::ceil;
             using std::forward;
             using std::make_shared;
             using function_type = typename std::decay<Func>::type;

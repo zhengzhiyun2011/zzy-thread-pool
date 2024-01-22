@@ -37,7 +37,7 @@ namespace ztools {
     private:
         struct Wrapper {
             Wrapper() = default;
-            Wrapper(size_t tasks_count)
+            Wrapper(std::size_t tasks_count)
                 : count(tasks_count) {}
 
             ~Wrapper() = default;
@@ -234,9 +234,9 @@ namespace ztools {
             std::forward_iterator_tag, typename Iter::iterator_category>::value, int>::type = 0>
         LoopWaiter add_loop_n(
             unsigned priority,
-            size_t one_task_processing_number,
-            size_t n,
+            std::size_t one_task_processing_number,
             Iter begin,
+            std::size_t n,
             Func&& func
         )
         {
@@ -300,9 +300,9 @@ namespace ztools {
         template <typename Iter, typename Func, typename std::enable_if<std::is_base_of<
             std::forward_iterator_tag, typename Iter::iterator_category>::value, int>::type = 0>
         LoopWaiter add_loop_n(
-            size_t one_task_processing_number,
-            size_t n,
+            std::size_t one_task_processing_number,
             Iter begin,
+            std::size_t n,
             Func&& func
         )
         {
@@ -321,8 +321,8 @@ namespace ztools {
         template <typename Iter, typename Func, typename std::enable_if<std::is_base_of<
             std::forward_iterator_tag, typename Iter::iterator_category>::value, int>::type = 0>
         LoopWaiter add_loop_n(
-            size_t n,
             Iter begin,
+            std::size_t n,
             Func&& func
         )
         {
@@ -342,7 +342,7 @@ namespace ztools {
             0>
         LoopWaiter add_loop(
             unsigned priority,
-            size_t one_task_processing_number,
+            std::size_t one_task_processing_number,
             Iter begin,
             Iter end,
             Func&& func
@@ -354,8 +354,8 @@ namespace ztools {
             return add_loop_n(
                 priority,
                 one_task_processing_number,
-                end - begin,
                 move(begin),
+                end - begin,
                 forward<Func>(func)
             );
         }
@@ -364,7 +364,7 @@ namespace ztools {
             std::random_access_iterator_tag, typename Iter::iterator_category>::value, int>::type =
             0>
         LoopWaiter add_loop(
-            size_t one_task_processing_number,
+            std::size_t one_task_processing_number,
             Iter begin,
             Iter end,
             Func&& func

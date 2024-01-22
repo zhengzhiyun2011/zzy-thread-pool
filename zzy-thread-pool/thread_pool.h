@@ -312,8 +312,8 @@ namespace ztools {
             return add_loop_n(
                 default_task_priority,
                 one_task_processing_number,
-                n,
                 move(begin),
+                n,
                 forward<Func>(func)
             );
         }
@@ -331,8 +331,8 @@ namespace ztools {
 
             return add_loop_n(
                 default_looped_times_in_one_task,
-                n,
                 move(begin),
+                n,
                 forward<Func>(func)
             );
         }

@@ -1,23 +1,24 @@
 #include <iostream>
-#include <vector>
-#include "thread_pool.h"
-using std::cout;
-using std::launch;
-using std::vector;
-using std::async;
 
-ztools::ThreadPool pool;
+#include "thread_pool.h"
+using ztools::ThreadPool;
+using namespace std;
 
 int main()
 {
-    vector<int> arr(100);
-    pool.add_loop(arr.begin(), arr.end(), [](int& e) { ++e; });
-    pool.add_loop_n(arr.begin(), arr.size(), [](int& e) { ++e; });
-    pool.wait_all();
-
-    for (auto& e : arr) {
-        cout << e << ' ';
+    ThreadPool pool;
+    atomic_int result{ 0 };
+    for (int i = 1; i <= 100; ++i) {
+        pool.add_task(
+            [](atomic_int& data, int add_value) {
+                data.fetch_add(add_value, memory_order_relaxed);
+            },
+            ref(result), i
+        );
     }
+
+    pool.wait_all();
+    cout << result.load(memory_order_relaxed) << '\n';
 
     return 0;
 }
